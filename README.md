@@ -37,6 +37,24 @@ Evaluation script uses the GLUE dataset. See the README file from the TinyBERT r
 
 > Before running data augmentation of GLUE tasks you should download the [GLUE](https://gluebenchmark.com/tasks) data by running this [script](https://gist.github.com/W4ngatang/60c2bdb54d156a41194446737ce03e2e) and unpack it to some directory.
 
+We provide the [download_glue_data.py](./nl_dpe/download_glue_data.py) script which is an updated version of the
+GitHub gist mentioned above.
+- Download MRPC dataset:
+  ```shell
+  mkdir -p ./datasets/mrpc && cd ./datasets/mrpc
+  wget https://dl.fbaipublicfiles.com/senteval/senteval_data/msr_paraphrase_train.txt
+  wget https://dl.fbaipublicfiles.com/senteval/senteval_data/msr_paraphrase_test.txt
+  ls -lh
+  sha1sum ./msr_paraphrase_test.txt ./msr_paraphrase_train.txt
+  # size    sha1                                       file
+  #  431K   4265196c15cf75620b0b592b8b921f543bda7e6c   msr_paraphrase_test.txt
+  # 1023K   716e0f67af962f08220b7e97d229b293077ef41f   msr_paraphrase_train.txt
+  ```
+- Download GLUE dataset (after downloading the MRPC data).
+  ```shell
+  python ./nl_dpe/download_glue_data.py --data_dir=./datasets/glue --tasks=all --path_to_mrpc ./datasets/mrpc
+  ```
+
 
 ## Models
 Three models are located in the [models](./models/) directory.
@@ -69,4 +87,15 @@ python ./nl_dpe/evaluate.py <task_name> <model_uri> <data_dir>
 #                   Task name must be consistent with the model being evaluated.
 #      <model_uri>: Path to a model directory
 #      <data_dir>:  Path to the data directory (e.g., ${GLUE_DIR}\\SST-2).
+```
+
+```shell
+python ./nl_dpe/evaluate.py sst-2 ./models/wise-tern-584/ ./datasets/glue/SST-2
+# acc = 0.9174311926605505, eval_loss = 0.2411253090415682
+
+python ./nl_dpe/evaluate.py cola ./models/blushing-dove-984/ ./datasets/glue/CoLA
+# mcc = 0.3118300074953714, eval_loss = 0.5854980647563934
+
+python ./nl_dpe/evaluate.py mrpc ./models/spiffy-snake-501/ ./datasets/glue/MRPC
+# acc_and_f1 = 0.787219887955182, eval_loss = 0.583455924804394
 ```
