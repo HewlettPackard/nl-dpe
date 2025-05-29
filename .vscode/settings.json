@@ -1,0 +1,16 @@
+{
+    "editor.wordWrap": "off",
+    "editor.rulers": [120],
+    "pylint.args": [
+        "--max-line-length=120",
+        "--disable=missing-module-docstring,missing-function-docstring",
+    ],
+    "cSpell.words": [
+        "MNLI",
+        "MRPC",
+        "QNLI",
+        "SNLI",
+        "WNLI",
+        "cabextract",
+    ]
+}
