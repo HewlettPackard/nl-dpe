@@ -1,0 +1,37 @@
+[tool.poetry]
+name = "nl_dpe"
+version = "0.0.1"
+description = "Non-Linear Dot Product Engine (NL-DPE)"
+authors = ["Hewlett Packard Labs"]
+readme = "README.md"
+
+
+[tool.poetry.dependencies]
+python = ">=3.10,<=3.12"
+pandas = ">=2.2.0"
+torch = ">=2.2.0"
+tqdm = ">=4.66.0"
+numpy = ">=2.0.0"
+scipy = ">=1.14.0"
+scikit-learn = ">=1.5.0"
+mlflow-skinny = ">=2.14.0"
+
+
+[tool.poetry.group.dev.dependencies]
+ruff = ">=0.8.0"
+pytest = ">=8.0.0"
+pre-commit = "3.6.0"
+
+
+[tool.ruff]
+target-version = 'py310'
+line-length = 120
+
+
+[tool.ruff.lint]
+extend-select = ["I"]      # Enable the isort rules.
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
