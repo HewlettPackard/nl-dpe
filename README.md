@@ -1,14 +1,16 @@
 # Non-Linear Dot Product Engine (NL-DPE)
+
 This project is based on this [TinyBERT](https://github.com/huawei-noah/Pretrained-Language-Model/blob/master/TinyBERT) repository.
 Some of the changes we introduced:
-- New model architectures based on original TinyBERT implmenentation.
+
+- New model architectures based on original TinyBERT implementation.
 - Support for newer Python versions.
 - Code formatting.
 
 This repository does not include the training code - only code to run inference.
 
-
 ## Install
+
 ```shell
 # Clone the NL-DPE repository.
 git clone https://github.com/HewlettPackard/nl-dpe
@@ -26,20 +28,22 @@ poetry install --without=dev
 export PYTHONPATH=$(pwd)
 ```
 
-
 ## Environment variables
-`MLFLOW_TRACKING_URI` \[optional\]: MLflow tracking server URI to load models from (when model URI is `mlflow:{MLFLOW_RUN_ID}`). 
+
+`MLFLOW_TRACKING_URI` \[optional\]: MLflow tracking server URI to load models from (when model URI is `mlflow:{MLFLOW_RUN_ID}`).
 This only works now when running evaluation on a system where the models under test were trained.
 
-
 ## Datasets
+
 Evaluation script uses the GLUE dataset. See the README file from the TinyBERT repository ([Data Augmentation section](https://github.com/huawei-noah/Pretrained-Language-Model/tree/master/TinyBERT#data-augmentation)) for more details. From that README file:
 
 > Before running data augmentation of GLUE tasks you should download the [GLUE](https://gluebenchmark.com/tasks) data by running this [script](https://gist.github.com/W4ngatang/60c2bdb54d156a41194446737ce03e2e) and unpack it to some directory.
 
 We provide the [download_glue_data.py](./nl_dpe/download_glue_data.py) script which is an updated version of the
 GitHub gist mentioned above.
+
 - Download MRPC dataset:
+
   ```shell
   mkdir -p ./datasets/mrpc && cd ./datasets/mrpc
   wget https://dl.fbaipublicfiles.com/senteval/senteval_data/msr_paraphrase_train.txt
@@ -50,16 +54,18 @@ GitHub gist mentioned above.
   #  431K   4265196c15cf75620b0b592b8b921f543bda7e6c   msr_paraphrase_test.txt
   # 1023K   716e0f67af962f08220b7e97d229b293077ef41f   msr_paraphrase_train.txt
   ```
+
 - Download GLUE dataset (after downloading the MRPC data).
+
   ```shell
   python ./nl_dpe/download_glue_data.py --data_dir=./datasets/glue --tasks=all --path_to_mrpc ./datasets/mrpc
   ```
 
-
 ## Models
+
 Three models are located in the [models](./models/) directory.
 
-- [wise-tern-584](./models/wise-tern-584/): **SST-2**. 
+- [wise-tern-584](./models/wise-tern-584/): **SST-2**.
   - From paper
     - BERT_base_teacher = 93.4, TinyBERT_4 = 92.6, TinyBERT_6 = 93.1
   - Our experiments
@@ -78,9 +84,10 @@ Three models are located in the [models](./models/) directory.
     - TinyBERT = 87.36
     - TinyBERT with hidden state averaging (run_name = spiffy-snake-501, run_id = b3c699617932420da22862c37698724a) = 78.72
 
-
 ## Model evaluation
+
 Look at [nl_dpe/evaluate.py](./nl_dpe/evaluate.py) file:
+
 ```shell
 python ./nl_dpe/evaluate.py <task_name> <model_uri> <data_dir>
 #      <task_name>: One of 'cola', 'sst-2', 'mrpc', 'sts-b', 'qqp', 'mnli', 'mnli-mm', 'qnli', 'rte', 'wnli'
@@ -99,3 +106,52 @@ python ./nl_dpe/evaluate.py cola ./models/blushing-dove-984/ ./datasets/glue/CoL
 python ./nl_dpe/evaluate.py mrpc ./models/spiffy-snake-501/ ./datasets/glue/MRPC
 # acc_and_f1 = 0.787219887955182, eval_loss = 0.583455924804394
 ```
+
+## Extracting and updating self-attention weights
+
+The [model.py](./nl_dpe/model.py) provides a number of CLI commands to extract self-attention weights, and then update
+the original model with new weights.
+
+Currently, all models in this repository have the same architecture - 4 encoder layers, 12 attention heads, hidden size
+is 312, attention dimension 26 (`26 * 12 = 312`). One self-attention head then can be indexed with a tuple
+`[layer, head]` where layer is a 1-based layer index (1, ..., 4 inclusive) and head is the 1-based index of the 
+attention head (1, ..., 12 inclusive).
+
+```shell
+# Evaluate this model to get the expected performance.
+python ./nl_dpe/evaluate.py cola ./models/blushing-dove-984/ ./datasets/glue/CoLA
+# eval_loss = 0.5854980764967023 mcc = 0.3118300074953714
+
+# Save attention weights for 1st layer and last attention head
+python ./nl_dpe/model.py extract-attention-weights --model-path=./models/blushing-dove-984/ --output-file=att-matrices.pkl --layer=1 --head=12
+
+# Update model with the unmodified weights. The model will be saved in a different directory.
+python ./nl_dpe/model.py update-attention-weights --model-path=./models/blushing-dove-984/ --weights-file=att-matrices.pkl --head=12 --output-dir=./models/blushing-dove-984-updated
+
+# Evaluate this model to confirm the original performance
+python ./nl_dpe/evaluate.py cola ./models/blushing-dove-984-updated ./datasets/glue/CoLA
+#   eval_loss = 0.5854980764967023, mcc = 0.3118300074953714
+
+
+# Now, remove the saved model and add Gaussian noise to the serialized attention weights.
+rm -r ./models/blushing-dove-984-updated
+python ./nl_dpe/model.py add-noise-to-attention-weights --weights-file=att-matrices.pkl --mean=0.0 --std=0.1
+
+# Update the model again with slightly different attention weights
+python ./nl_dpe/model.py update-attention-weights --model-path=./models/blushing-dove-984/ --weights-file=att-matrices.pkl --head=12 --output-dir=./models/blushing-dove-984-updated
+
+# Confirm that evaluation metics are different
+python ./nl_dpe/evaluate.py cola ./models/blushing-dove-984-updated ./datasets/glue/CoLA
+#   eval_loss = 0.59219029545784, mcc = 0.29623405262647357
+```
+
+The `add-noise-to-attention-weights` command above is used only for testing purposes. The file with weights must always
+have the following properties:
+
+- It must be a pickle file containing Python dictionary.
+- Keys in that dictionary must be valid tensor names in the original model. Users, when modifying saved weights file
+  must keep these names as is.
+- There must be 6 entries in this dictionary - weights and biases for K, Q and V matrices. Biases are 1D numpy arrays,
+  while wights are 2D numpy arrays.
+- Given models this repository provides, the weights arrays have `(26, 26)` shape, while biases arrays have `(26,)` 
+  shape.
