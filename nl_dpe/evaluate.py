@@ -42,10 +42,10 @@ from nl_dpe.error import NlDpeError
 from transformer.modeling import TinyBertForSequenceClassification
 from transformer.tokenization import BertTokenizer
 
-log_format = "%(asctime)s %(message)s"
-logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=log_format, datefmt="%m/%d %I:%M:%S %p")
+LOG_FORMAT: str = "%(asctime)s %(message)s"
+logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=LOG_FORMAT, datefmt="%m/%d %I:%M:%S %p")
 fh = logging.FileHandler("debug_layer_loss.log")
-fh.setFormatter(logging.Formatter(log_format))
+fh.setFormatter(logging.Formatter(LOG_FORMAT))
 logging.getLogger().addHandler(fh)
 logger = logging.getLogger(__name__)
 
@@ -154,7 +154,7 @@ class Sst2Task(Task):
         for i, line in enumerate(lines):
             if i == 0:
                 continue
-            guid = "%s-%s" % (dataset_split, i)
+            guid = f"{dataset_split}-{i}"
             text_a = line[0]
             label = line[1]
             examples.append(InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
@@ -264,7 +264,7 @@ def convert_examples_to_features(
     for ex_index, example in enumerate(examples):
         assert example.label is not None, "Example label must be defined."
         if ex_index % 10000 == 0:
-            logger.info("Writing example %d of %d" % (ex_index, len(examples)))
+            logger.info("Writing example %d of %d", ex_index, len(examples))
 
         tokens_a = tokenizer.tokenize(example.text_a)
 
@@ -305,13 +305,13 @@ def convert_examples_to_features(
 
         if ex_index < 1:
             logger.info("*** Example ***")
-            logger.info("guid: %s" % (example.guid))
+            logger.info("guid: %s", example.guid)
             logger.info("tokens: %s" % " ".join([str(x) for x in tokens]))
             logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
             logger.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
             logger.info("segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
-            logger.info("label: {}".format(example.label))
-            logger.info("label_id: {}".format(label_id))
+            logger.info("label: %s", example.label)
+            logger.info("label_id: %d", label_id)
 
         features.append(
             InputFeatures(
@@ -394,8 +394,8 @@ def do_eval(
     eval_labels: torch.Tensor,
     num_labels: int,
 ) -> Dict:
-    eval_loss = 0
-    nb_eval_steps = 0
+    eval_loss: float = 0
+    nb_eval_steps: int = 0
     preds = []
 
     for batch_ in tqdm(eval_dataloader, desc="Evaluating"):
@@ -484,10 +484,10 @@ def compute_metrics(task_name: str, preds, labels) -> Dict:
         raise KeyError(task_name)
 
 
-if __name__ == "__main__":
+def main() -> None:
     try:
         args: list[str] = sys.argv[1:]
-        if (len(args) != 3):
+        if len(args) != 3:
             print("Usage: python nl_dpe/evaluate.py <task_name> <model_uri> <data_dir>")
             print("       <task_name>: One of 'cola', 'sst-2', 'mrpc', 'sts-b', 'qqp', 'mnli', 'mnli-mm', 'qnli', 'rte', 'wnli'.")
             print("                    Task name must be consistent with the model being evaluated.")
@@ -502,4 +502,8 @@ if __name__ == "__main__":
         evaluate(task_name, model_uri, data_dir)
     except NlDpeError as err:
         print(str(err))
-        exit(1)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
