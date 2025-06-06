@@ -6,11 +6,15 @@
         "--disable=missing-module-docstring,missing-function-docstring",
     ],
     "cSpell.words": [
+        "cabextract",
+        "MLFLOW",
         "MNLI",
         "MRPC",
+        "ndarray",
+        "PYTHONPATH",
         "QNLI",
         "SNLI",
-        "WNLI",
-        "cabextract",
+        "virtualenv",
+        "WNLI"
     ]
 }
