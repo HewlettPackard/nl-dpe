@@ -372,6 +372,7 @@ def evaluate(task_name: str, model_uri: str, data_dir: str, eval_batch_size: int
 
     model = TinyBertForSequenceClassification.from_pretrained(model_path, num_labels=task.num_labels())
     model.to(device)
+    print(f"Task name: {task_name}, model class: {type(model)}")
 
     logger.info("***** Running evaluation *****")
     logger.info("  Num examples = %d", len(eval_examples))
