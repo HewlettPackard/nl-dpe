@@ -466,7 +466,7 @@ class BertSelfAttention(nn.Module):
         mixed_value_layer: Float[torch.Tensor, "batch sequence hidden_size"] = self.value(attention_input)
 
         if dpe.enabled(self.bert_layer_index):
-            dpe_query, dpe_key, dpe_value = dpe.call(mixed_query_layer)
+            dpe_query, dpe_key, dpe_value = dpe.call(attention_input)
             start_idx: int = (dpe.attention_head_index() - 1) * self.attention_head_size
             end_idx: int = start_idx + self.attention_head_size
 
