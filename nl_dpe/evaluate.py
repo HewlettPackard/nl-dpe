@@ -32,6 +32,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
+from jaxtyping import Float, Int, Num
 from scipy.stats import pearsonr, spearmanr
 from sklearn.metrics import f1_score, matthews_corrcoef
 from torch.nn import CrossEntropyLoss, MSELoss
@@ -397,8 +398,16 @@ def do_eval(
 ) -> Dict:
     eval_loss: float = 0
     nb_eval_steps: int = 0
-    preds = []
+    preds: list[np.ndarray] = []
 
+    batch_: tuple[
+        Int[torch.Tensor, "batch seq"],  # input_ids
+        Int[torch.Tensor, "batch seq"],  # input_mask
+        Int[torch.Tensor, "batch seq"],  # segment_ids
+        Int[torch.Tensor, " batch"],     # label_ids
+        Int[torch.Tensor, " batch"]      # seq_lengths
+    ]
+    logits: Float[torch.Tensor, "batch class"]
     for batch_ in tqdm(eval_dataloader, desc="Evaluating"):
         batch_ = tuple(t.to(device) for t in batch_)
         with torch.no_grad():
@@ -436,7 +445,11 @@ def do_eval(
     return result
 
 
-def compute_metrics(task_name: str, preds, labels) -> Dict:
+def compute_metrics(
+        task_name: str, 
+        preds: Num[np.ndarray, " dim"], 
+        labels: Num[np.ndarray, " dim"]
+) -> Dict:
     assert len(preds) == len(labels)
 
     def simple_accuracy(preds, labels) -> float:

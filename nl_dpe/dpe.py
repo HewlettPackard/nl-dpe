@@ -19,10 +19,10 @@ from jaxtyping import Float
 __all__ = ["attention_head_index", "enabled", "call"]
 
 
-_BERT_LAYER_INDEX: int = 1
+_BERT_LAYER_INDEX: int = -1
 """1-based layer index (1, 2, 3, 4) or -1 to disable DPE call."""
 
-_ATTENTION_HEAD_INDEX: int = 2
+_ATTENTION_HEAD_INDEX: int = -1
 """1-based attention head index [1, 2, ..., 12] inclusive or -1 to disable DPE call."""
 
 
@@ -43,11 +43,11 @@ def enabled(bert_layer_index: int) -> bool:
 
 
 def call(
-        attention_input: Float[torch.Tensor, "batch sequence input_sz"]
+        attention_input: Float[torch.Tensor, "batch seq head_in_dim"]
 ) -> tuple[
-        Float[torch.Tensor, "batch sequence output_sz"],
-        Float[torch.Tensor, "batch sequence output_sz"],
-        Float[torch.Tensor, "batch sequence output_sz"]
+        Float[torch.Tensor, "batch seq head_out_dim"],
+        Float[torch.Tensor, "batch seq head_out_dim"],
+        Float[torch.Tensor, "batch seq head_out_dim"]
 ]:
     """Call the DPE engine that computes query, key and value matrices for dot-product attention for one attention head.
 
@@ -60,14 +60,14 @@ def call(
     
     Returns:
         A tuple of three tensors - query, key and value. For models in this repository, this will be something like
-        (32, 64, 312). Output dimension is determined by the weight tensors previously exported.
+        (32, 64, 26). Output dimension is determined by the weight tensors previously exported.
     """
 
     # Just for example, placeholder implementation returns random tensors.
     output_dim: int = 26
     output_shape: torch.Size = torch.Size((attention_input.shape[0], attention_input.shape[1], output_dim))
 
-    def _random_tensor() -> Float[torch.Tensor, "batch sequence output_sz"]:
+    def _random_tensor() -> Float[torch.Tensor, "batch seq head_out_dim"]:
         return torch.randn(output_shape, dtype=attention_input.dtype, device=attention_input.device)
 
     return (_random_tensor(), _random_tensor(), _random_tensor())
