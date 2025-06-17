@@ -3,14 +3,17 @@
     "editor.rulers": [120],
     "pylint.args": [
         "--max-line-length=120",
-        "--disable=missing-module-docstring,missing-function-docstring",
+        "--disable=missing-module-docstring,missing-function-docstring,missing-class-docstring",
     ],
     "cSpell.words": [
         "cabextract",
+        "gelu",
+        "keepdim",
         "MLFLOW",
         "MNLI",
         "MRPC",
         "ndarray",
+        "pooler",
         "PYTHONPATH",
         "QNLI",
         "SNLI",

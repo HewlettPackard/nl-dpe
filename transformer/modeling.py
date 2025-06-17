@@ -24,11 +24,14 @@ import os
 import re
 from io import open
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, cast
 
 import torch
+from jaxtyping import Float, Int
 from torch import Tensor, nn
 from torch.nn import CrossEntropyLoss
+
+import nl_dpe.dpe as dpe
 
 from .file_utils import CONFIG_NAME, WEIGHTS_NAME
 
@@ -70,13 +73,13 @@ def load_tf_weights_in_bert(model, tf_checkpoint_path):
         )
         raise
     tf_path = os.path.abspath(tf_checkpoint_path)
-    print("Converting TensorFlow checkpoint from {}".format(tf_path))
+    print(f"Converting TensorFlow checkpoint from {tf_path}.")
     # Load weights from TF model
     init_vars = tf.train.list_variables(tf_path)
     names = []
     arrays = []
     for name, shape in init_vars:
-        print("Loading TF weight {} with shape {}".format(name, shape))
+        print(f"Loading TF weight {name} with shape {shape}.")
         array = tf.train.load_variable(tf_path, name)
         names.append(name)
         arrays.append(array)
@@ -86,7 +89,7 @@ def load_tf_weights_in_bert(model, tf_checkpoint_path):
         # adam_v and adam_m are variables used in AdamWeightDecayOptimizer to calculated m and v
         # which are not required for using pretrained model
         if any(n in ["adam_v", "adam_m", "global_step"] for n in name):
-            print("Skipping {}".format("/".join(name)))
+            print("Skipping:", "/".join(name))
             continue
         pointer = model
         for m_name in name:
@@ -100,7 +103,7 @@ def load_tf_weights_in_bert(model, tf_checkpoint_path):
                 try:
                     pointer = getattr(pointer, "bias")
                 except AttributeError:
-                    print("Skipping {}".format("/".join(name)))
+                    print("Skipping:", "/".join(name))
                     continue
             elif l[0] == "output_weights":
                 pointer = getattr(pointer, "weight")
@@ -110,7 +113,7 @@ def load_tf_weights_in_bert(model, tf_checkpoint_path):
                 try:
                     pointer = getattr(pointer, l[0])
                 except AttributeError:
-                    print("Skipping {}".format("/".join(name)))
+                    print("Skipping:", "/".join(name))
                     continue
             if len(l) >= 2:
                 num = int(l[1])
@@ -124,12 +127,12 @@ def load_tf_weights_in_bert(model, tf_checkpoint_path):
         except AssertionError as e:
             e.args += (pointer.shape, array.shape)
             raise
-        print("Initialize PyTorch weight {}".format(name))
+        print(f"Initialize PyTorch weight {namme}.")
         pointer.data = torch.from_numpy(array)
     return model
 
 
-def gelu(x):
+def gelu(x: Float[torch.Tensor, "..."]) -> Float[torch.Tensor, "..."]:
     """Implementation of the gelu activation function.
     For information: OpenAI GPT's gelu is slightly different (and gives slightly different results):
     0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
@@ -155,9 +158,9 @@ except ImportError:
             self.bias = nn.Parameter(torch.zeros(hidden_size))
             self.variance_epsilon = eps
 
-        def forward(self, x: Tensor) -> Tensor:
-            u = x.mean(-1, keepdim=True)
-            s = (x - u).pow(2).mean(-1, keepdim=True)
+        def forward(self, x: Float[torch.Tensor, "batch seq model_dim"]) -> Float[torch.Tensor, "batch seq model_dim"]:
+            u: Float[torch.Tensor, "batch seq 1"] = x.mean(-1, keepdim=True)
+            s: Float[torch.Tensor, "batch seq 1"] = (x - u).pow(2).mean(-1, keepdim=True)
             x = (x - u) / torch.sqrt(s + self.variance_epsilon)
             return self.weight * x + self.bias
 
@@ -170,8 +173,8 @@ class HeadAttention(nn.Module):
         self.hidden_size = hidden_size
         if self.hidden_size % self.head_num != 0:
             raise ValueError(
-                "The hidden size (%d) is not a multiple of the number of attention "
-                "heads (%d)" % (self.hidden_size, self.head_num)
+                f"The hidden size ({self.hidden_size}) is not a multiple of the number of attention "
+                f"heads ({self.head_num})."
             )
 
         self.attention_head_size = int(self.hidden_size / self.head_num)
@@ -273,7 +276,7 @@ class BertConfig(object):
                 layer in the Transformer encoder.
             hidden_act: The non-linear activation function (function or string) in the
                 encoder and pooler. If string, "gelu", "relu" and "swish" are supported.
-            hidden_dropout_prob: The dropout probabilitiy for all fully connected
+            hidden_dropout_prob: The dropout probability for all fully connected
                 layers in the embeddings, encoder, and pooler.
             attention_probs_dropout_prob: The dropout ratio for the attention
                 probabilities.
@@ -382,35 +385,39 @@ class BertEmbeddings(nn.Module):
         self.LayerNorm = BertLayerNorm(embedding_dim, eps=1e-12)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
-    def forward(self, input_ids: Tensor, token_type_ids: Optional[Tensor] = None) -> Tensor:
-        # input_ids: [Batch, Length]
-        seq_length = input_ids.size(1)
-        position_ids = torch.arange(seq_length, dtype=torch.long, device=input_ids.device)
-        position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
+    def forward(
+            self,
+            input_ids: Int[torch.Tensor, "batch seq"],
+            token_type_ids: Optional[Int[torch.Tensor, "batch seq"]] = None
+    ) -> Float[torch.Tensor, "batch seq model_dim"]:
+        seq_length: int = input_ids.size(1)
+        position_ids: Int[torch.Tensor, " seq"] = torch.arange(seq_length, dtype=torch.long, device=input_ids.device)
+        position_ids: Int[torch.Tensor, "batch seq"] = position_ids.unsqueeze(0).expand_as(input_ids)
         if token_type_ids is None:
             token_type_ids = torch.zeros_like(input_ids)
 
-        words_embeddings = self.word_embeddings(input_ids)
-        position_embeddings = self.position_embeddings(position_ids)
-        token_type_embeddings = self.token_type_embeddings(token_type_ids)
+        words_embeddings: Float[torch.Tensor, "batch seq model_dim"] = self.word_embeddings(input_ids)
+        position_embeddings: Float[torch.Tensor, "batch seq model_dim"] = self.position_embeddings(position_ids)
+        token_type_embeddings: Float[torch.Tensor, "batch seq model_dim"] = self.token_type_embeddings(token_type_ids)
 
-        embeddings = words_embeddings + position_embeddings + token_type_embeddings
+        embeddings: Float[torch.Tensor, "batch seq model_dim"] = \
+            words_embeddings + position_embeddings + token_type_embeddings
         embeddings = self.LayerNorm(embeddings)
-        embeddings = self.dropout(embeddings)  # [Batch, Length, EmdSz]
+        embeddings = self.dropout(embeddings)
 
         if self.dim_reduction_layer is not None:
             embeddings = self.dim_reduction_layer(embeddings)
 
-        return embeddings  # [Batch, Length, HiddenSize]
+        return embeddings
 
 
 class BertSelfAttention(nn.Module):
-    def __init__(self, config: BertConfig) -> None:
+    def __init__(self, config: BertConfig, bert_layer_index: int) -> None:
         super(BertSelfAttention, self).__init__()
         if config.hidden_size % config.num_attention_heads != 0:
             raise ValueError(
-                "The hidden size (%d) is not a multiple of the number of attention "
-                "heads (%d)" % (config.hidden_size, config.num_attention_heads)
+                f"The hidden size ({config.hidden_size}) is not a multiple of the number of attention "
+                f"heads ({config.num_attention_heads})"
             )
         self.num_attention_heads: int = config.num_attention_heads  # TinyBERT 12
         self.attention_head_size: int = int(config.hidden_size / config.num_attention_heads)  # TinyBERT 26
@@ -426,14 +433,26 @@ class BertSelfAttention(nn.Module):
         self.value = nn.Linear(attention_input_dim, self.all_head_size)  # TinyBERT [312, 312] all attention heads
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
+        self.bert_layer_index = bert_layer_index
 
-    def transpose_for_scores(self, x):
-        # [Batch, SeqLen, EmbSz] -> [Batch, SeqLen, NumAttHeads, AttHeadSz]
-        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+    def transpose_for_scores(
+            self, x: Float[torch.Tensor, "batch seq model_dim"]
+    ) -> Float[torch.Tensor, "batch head seq model_dim"]:
+        new_x_shape: torch.Size = cast(torch.Size, x.size()[:-1] + (self.num_attention_heads, self.attention_head_size))
         x = x.view(*new_x_shape)
-        return x.permute(0, 2, 1, 3)  # -> [Batch, NumAttHeads, SeqLen, AttHeadSz]
+        return x.permute(0, 2, 1, 3)
 
-    def forward(self, hidden_states: Tensor, attention_mask: Tensor, output_att: bool = False) -> Tuple[Tensor, Tensor]:
+    def forward(
+            self,
+            hidden_states: Float[torch.Tensor, "batch seq model_dim"],
+            attention_mask: Float[torch.Tensor, "batch 1 1 seq"],
+            output_att: bool = False
+    ) -> Tuple[
+            Float[torch.Tensor, "batch seq model_dim"],
+            Float[torch.Tensor, "batch head seq seq"]
+    ]:
+        # head_in_dim could be different from model_dim.
+        attention_input: Float[torch.Tensor, "batch seq head_in_dim"]
         # hidden_states: [Batch, SeqLen, HiddenSz] attention_mask: [Batch, 1, 1, SeqLen]
         if self.arch == BertArchitecture.AVERAGE_HIDDEN_STATES:
             hidden_states = hidden_states.reshape(
@@ -442,52 +461,79 @@ class BertSelfAttention(nn.Module):
                 self.num_attention_heads,  #
                 self.attention_head_size,  #
             )
-            hidden_states = hidden_states.mean(dim=2)
+            attention_input = hidden_states.mean(dim=2)
+        else:
+            attention_input = hidden_states
 
-        mixed_query_layer: Tensor = self.query(hidden_states)  # [Batch, SeqLen, EmbSz]
-        mixed_key_layer: Tensor = self.key(hidden_states)  # [Batch, SeqLen, EmbSz]
-        mixed_value_layer: Tensor = self.value(hidden_states)  #  [Batch, SeqLen, EmbSz]
+        # These linear layers will bring input dimension back to hidden size if input was reduced above.
+        mixed_query_layer: Float[torch.Tensor, "batch seq model_dim"] = self.query(attention_input)
+        mixed_key_layer: Float[torch.Tensor, "batch seq model_dim"] = self.key(attention_input)
+        mixed_value_layer: Float[torch.Tensor, "batch seq model_dim"] = self.value(attention_input)
 
-        query_layer = self.transpose_for_scores(mixed_query_layer)  # [Batch, NumAttHeads, SeqLen, AttHeadSz]
-        key_layer = self.transpose_for_scores(mixed_key_layer)  # [Batch, NumAttHeads, SeqLen, AttHeadSz]
-        value_layer = self.transpose_for_scores(mixed_value_layer)  # [Batch, NumAttHeads, SeqLen, AttHeadSz]
+        if dpe.enabled(self.bert_layer_index):
+            dpe_query, dpe_key, dpe_value = dpe.call(attention_input)
+            start_idx: int = (dpe.attention_head_index() - 1) * self.attention_head_size
+            end_idx: int = start_idx + self.attention_head_size
+
+            mixed_query_layer[: , :, start_idx:end_idx] = dpe_query
+            mixed_key_layer[: , :, start_idx:end_idx] = dpe_key
+            mixed_value_layer[: , :, start_idx:end_idx] = dpe_value
+
+        query_layer: Float[torch.Tensor, "batch head seq head_out_dim"] = self.transpose_for_scores(
+            mixed_query_layer
+        )
+        key_layer: Float[torch.Tensor, "batch head seq head_out_dim"] = self.transpose_for_scores(
+            mixed_key_layer
+        )
+        value_layer: Float[torch.Tensor, "batch head seq head_out_dim"] = self.transpose_for_scores(
+            mixed_value_layer
+        )
 
         # Take the dot product between "query" and "key" to get the raw attention scores.
-        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+        attention_scores: Float[torch.Tensor, "batch head seq seq"] = torch.matmul(
+            query_layer, key_layer.transpose(-1, -2)
+        )
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
         attention_scores = attention_scores + attention_mask  # [Batch, NumAttHeads, SeqLen, SeqLen]
 
         # Normalize the attention scores to probabilities.
-        attention_probs = nn.Softmax(dim=-1)(attention_scores)  # [Batch, NumAttHeads, SeqLen, SeqLen]
+        attention_probs: Float[torch.Tensor, "batch head seq seq"] = nn.Softmax(dim=-1)(attention_scores)
 
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
         attention_probs = self.dropout(attention_probs)
 
-        context_layer = torch.matmul(attention_probs, value_layer)
-        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()  # [Batch, SeqLen, NumAttHeads, SeqLen]
-        new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)  # [Batch, SeqLen, EmbDz]
-        context_layer = context_layer.view(*new_context_layer_shape)  # [Batch, SeqLen, EmbDz]
-        return context_layer, attention_scores  # [Batch, SeqLen, HiddenDim], [Batch, NumAttHeads, SeqLen, SeqLen]
+        context_layer: Float[torch.Tensor, "batch head seq head_out_dim"] = torch.matmul(
+            attention_probs, value_layer
+        )
+        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+        new_context_layer_shape: torch.Size = cast(torch.Size, context_layer.size()[:-2] + (self.all_head_size, ))
+        context_layer: Float[torch.Tensor, "batch seq model_dim"] = context_layer.view(*new_context_layer_shape)
+
+        return context_layer, attention_scores
 
 
 class BertAttention(nn.Module):
-    def __init__(self, config: BertConfig) -> None:
+    def __init__(self, config: BertConfig, bert_layer_index: int) -> None:
         super(BertAttention, self).__init__()
 
-        self.self = BertSelfAttention(config)
-        self.output = BertSelfOutput(config)  # Dense, DropOut,LayerNorm,AddSkipConnect
+        self.self = BertSelfAttention(config, bert_layer_index)
+        self.output = BertSelfOutput(config)
+        self.bert_layer_index = bert_layer_index
 
-    def forward(self, input_tensor: Tensor, attention_mask: Tensor) -> Tuple[Tensor, Tensor]:
-        """
-        input_tensor: [Batch, SeqLen, HiddenSz]
-        attention_mask: [Batch, 1, 1, SeqLen]
-        """
-        # self_output: [Batch, SeqLen, HiddenSz], layer_att: [Batch, NumAttHeads, SeqLen, SeqLen]
-        self_output, layer_att = self.self(input_tensor, attention_mask)  # self-attention
-        # attention_output: [Batch, SeqLen, SeqLen]
-        attention_output: Tensor = self.output(self_output, input_tensor)  # self-output
+    def forward(
+            self,
+            input_tensor: Float[torch.Tensor, "batch seq model_dim"],
+            attention_mask: Float[torch.Tensor, "batch 1 1 seq"]
+    ) -> Tuple[
+            Float[torch.Tensor, "batch seq model_dim"],
+            Float[torch.Tensor, "batch head seq seq"]
+    ]:
+        self_output: Float[torch.Tensor, "batch seq model_dim"]
+        layer_att: Float[torch.Tensor, "batch head seq seq"]
+        self_output, layer_att = self.self(input_tensor, attention_mask)
+        attention_output: Float[torch.Tensor, "batch seq model_dim"] = self.output(self_output, input_tensor)
         return attention_output, layer_att
 
 
@@ -498,15 +544,15 @@ class BertSelfOutput(nn.Module):
         self.LayerNorm = BertLayerNorm(config.hidden_size, eps=1e-12)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
-    def forward(self, hidden_states: Tensor, input_tensor: Tensor) -> Tensor:
-        """
-        hidden_states: [Batch, SeqLen, HiddenDim]
-        input_tensor: [Batch, SeqLen, HiddenDim]
-        """
+    def forward(
+            self,
+            hidden_states: Float[torch.Tensor, "batch seq model_dim"],
+            input_tensor: Float[torch.Tensor, "batch seq model_dim"]
+    ) -> Float[torch.Tensor, "batch seq model_dim"]:
         hidden_states = self.dense(hidden_states)
         hidden_states = self.dropout(hidden_states)
         hidden_states = self.LayerNorm(hidden_states + input_tensor)
-        return hidden_states  # [Batch, SeqLen, HiddenSz]
+        return hidden_states
 
 
 class BertIntermediate(nn.Module):
@@ -521,14 +567,16 @@ class BertIntermediate(nn.Module):
         else:
             self.intermediate_act_fn = config.hidden_act
 
-    def forward(self, hidden_states):
-        hidden_states = self.dense(hidden_states)
-        hidden_states = self.intermediate_act_fn(hidden_states)
-        return hidden_states
+    def forward(
+            self, hidden_states: Float[torch.Tensor, "batch seq model_dim"]
+    ) -> Float[torch.Tensor, "batch seq intermediate_dim"]:
+        y: Float[torch.Tensor, "batch seq intermediate_dim"] = self.dense(hidden_states)
+        y = self.intermediate_act_fn(y)
+        return y
 
 
 class BertOutput(nn.Module):
-    def __init__(self, config, intermediate_size=-1):
+    def __init__(self, config: BertConfig, intermediate_size: int = -1) -> None:
         super(BertOutput, self).__init__()
         if intermediate_size < 0:
             self.dense = nn.Linear(config.intermediate_size, config.hidden_size)
@@ -537,24 +585,43 @@ class BertOutput(nn.Module):
         self.LayerNorm = BertLayerNorm(config.hidden_size, eps=1e-12)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
-    def forward(self, hidden_states, input_tensor):
-        hidden_states = self.dense(hidden_states)
-        hidden_states = self.dropout(hidden_states)
-        hidden_states = self.LayerNorm(hidden_states + input_tensor)
-        return hidden_states
+    def forward(
+            self, 
+            hidden_states: Float[torch.Tensor, "batch seq intermediate_dim"], 
+            input_tensor: Float[torch.Tensor, "batch seq model_dim"]
+    ) -> Float[torch.Tensor, "batch seq model_dim"]:
+        y: Float[torch.Tensor, "batch seq model_dim"] = self.dense(hidden_states)
+        y = self.dropout(y)
+        y = self.LayerNorm(y + input_tensor)
+        return y
 
 
 class BertLayer(nn.Module):
-    def __init__(self, config: BertConfig) -> None:
+    def __init__(self, config: BertConfig, layer_index: int) -> None:
         super(BertLayer, self).__init__()
-        self.attention = BertAttention(config)
+        self.attention = BertAttention(config, layer_index)
         self.intermediate = BertIntermediate(config)
         self.output = BertOutput(config)
+        self.layer_index = layer_index
 
-    def forward(self, hidden_states: Tensor, attention_mask: Tensor) -> Tuple[Tensor, Tensor]:
+    def forward(
+            self,
+            hidden_states: Float[torch.Tensor, "batch seq model_dim"],
+            attention_mask: Float[torch.Tensor, "batch 1 1 seq"]
+    ) -> Tuple[
+            Float[torch.Tensor, "batch seq model_dim"], # layer output
+            Float[torch.Tensor, "batch head seq seq"] # attention
+    ]:
+        attention_output: Float[torch.Tensor, "batch seq model_dim"]
+        layer_att: Float[torch.Tensor, "batch head seq seq"]
+
         attention_output, layer_att = self.attention(hidden_states, attention_mask)
-        intermediate_output = self.intermediate(attention_output)
-        layer_output = self.output(intermediate_output, attention_output)
+        intermediate_output: Float[torch.Tensor, "batch seq intermediate_dim"] = self.intermediate(
+            attention_output
+        )
+        layer_output: Float[torch.Tensor, "batch seq model_dim"] = self.output(
+            intermediate_output, attention_output
+        )
 
         return layer_output, layer_att
 
@@ -562,15 +629,25 @@ class BertLayer(nn.Module):
 class BertEncoder(nn.Module):
     def __init__(self, config: BertConfig) -> None:
         super(BertEncoder, self).__init__()
-        self.layer = nn.ModuleList([BertLayer(config) for _ in range(config.num_hidden_layers)])
+        self.layer = nn.ModuleList([BertLayer(config, idx + 1) for idx in range(config.num_hidden_layers)])
 
-    def forward(self, hidden_states: Tensor, attention_mask: Tensor) -> Tuple[List, List]:
+    def forward(
+            self,
+            hidden_states: Float[torch.Tensor, "batch seq model_dim"],
+            attention_mask: Float[torch.Tensor, "batch 1 1 seq"]
+    ) -> Tuple[
+            list[Float[torch.Tensor, "batch seq model_dim"]], # hidden states
+            list[Float[torch.Tensor, "batch head seq seq"]] # attention outputs
+    ]:
         """
         hidden_states: [Batch, Length, EmbDim]
         """
-        all_encoder_layers = []
-        all_encoder_atts = []
-        for _, layer_module in enumerate(self.layer):
+        all_encoder_layers: list[Float[torch.Tensor, "batch seq model_dim"]] = []  # hidden states
+        all_encoder_atts: list[Float[torch.Tensor, "batch head seq seq"]] = []
+        layer_att: Float[torch.Tensor, "batch head seq seq"]
+
+        layer_module: BertLayer
+        for layer_module in self.layer:
             all_encoder_layers.append(hidden_states)
             hidden_states, layer_att = layer_module(hidden_states, attention_mask)
             all_encoder_atts.append(layer_att)
@@ -580,16 +657,18 @@ class BertEncoder(nn.Module):
 
 
 class BertPooler(nn.Module):
-    def __init__(self, config, recurs=None):
+    def __init__(self, config: BertConfig, recurs=None) -> None:
         super(BertPooler, self).__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.activation = nn.Tanh()
         self.config = config
 
-    def forward(self, hidden_states):
+    def forward(
+            self, hidden_states: list[Float[torch.Tensor, "batch seq model_dim"]]
+    ) -> Float[torch.Tensor, "batch model_dim"]:
         # We "pool" the model by simply taking the hidden state corresponding
         # to the first token. "-1" refers to last layer
-        pooled_output = hidden_states[-1][:, 0]
+        pooled_output: Float[torch.Tensor, "batch model_dim"]= hidden_states[-1][:, 0]
 
         pooled_output = self.dense(pooled_output)
         pooled_output = self.activation(pooled_output)
@@ -666,18 +745,17 @@ class BertPreTrainingHeads(nn.Module):
 
 class BertPreTrainedModel(nn.Module):
     """An abstract class to handle weights initialization and
-    a simple interface for dowloading and loading pretrained models.
+    a simple interface for downloading and loading pretrained models.
     """
 
     def __init__(self, config: BertConfig, *inputs, **kwargs) -> None:
         super(BertPreTrainedModel, self).__init__()
         if not isinstance(config, BertConfig):
+            cls_name: str = self.__class__.__name__
             raise ValueError(
-                "Parameter config in `{}(config)` should be an instance of class `BertConfig`. "
+                f"Parameter config in `{cls_name}(config)` should be an instance of class `BertConfig`. "
                 "To create a model from a Google pretrained model use "
-                "`model = {}.from_pretrained(PRETRAINED_MODEL_NAME)`".format(
-                    self.__class__.__name__, self.__class__.__name__
-                )
+                f"`model = {cls_name}.from_pretrained(PRETRAINED_MODEL_NAME)`"
             )
         self.config = config
 
@@ -732,7 +810,8 @@ class BertPreTrainedModel(nn.Module):
                     . `model.chkpt` a TensorFlow checkpoint
             from_tf: should we load the weights from a locally saved TensorFlow checkpoint
             cache_dir: an optional path to a folder in which the pre-trained models will be cached.
-            state_dict: an optional state dictionnary (collections.OrderedDict object) to use instead of Google pre-trained models
+            state_dict: an optional state dictionary (collections.OrderedDict object) to use instead of 
+                        Google pre-trained models
             *inputs, **kwargs: additional input for the specific Bert class
                 (ex: num_labels for BertForSequenceClassification)
         """
@@ -845,10 +924,11 @@ class BertModel(BertPreTrainedModel):
             selected in [0, 1]. It's a mask to be used if the input sequence length is smaller than the max
             input sequence length in the current batch. It's the mask that we typically use for attention when
             a batch has varying length sentences.
-        `output_all_encoded_layers`: boolean which controls the content of the `encoded_layers` output as described below. Default: `True`.
+        `output_all_encoded_layers`: boolean which controls the content of the `encoded_layers` output as described 
+            below. Default: `True`.
 
     Outputs: Tuple of (encoded_layers, pooled_output)
-        `encoded_layers`: controled by `output_all_encoded_layers` argument:
+        `encoded_layers`: controlled by `output_all_encoded_layers` argument:
             - `output_all_encoded_layers=True`: outputs a list of the full sequences of encoded-hidden-states at the end
                 of each attention block (i.e. 12 full sequences for BERT-base, 24 for BERT-large), each
                 encoded-hidden-state is a torch.FloatTensor of size [batch_size, sequence_length, hidden_size],
@@ -882,12 +962,16 @@ class BertModel(BertPreTrainedModel):
 
     def forward(
         self,
-        input_ids: Tensor,
-        token_type_ids: Optional[Tensor] = None,
-        attention_mask: Optional[Tensor] = None,
-        output_all_encoded_layers=True,
-        output_att=True,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        input_ids: Int[torch.Tensor, "batch seq"],
+        token_type_ids: Optional[Int[torch.Tensor, "batch seq"]] = None,
+        attention_mask: Optional[Int[torch.Tensor, "batch seq"]] = None,
+        output_all_encoded_layers: bool = True,
+        output_att: bool = True,
+    ) -> Tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor
+    ]:
         # input_ids, token_type_ids, attention_mask: [Batch, Length]
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids)
@@ -899,7 +983,7 @@ class BertModel(BertPreTrainedModel):
         # So we can broadcast to [batch_size, num_heads, from_seq_length, to_seq_length]
         # this attention mask is more simple than the triangular masking of causal attention
         # used in OpenAI GPT, we just need to prepare the broadcast dimension here.
-        extended_attention_mask: Tensor = attention_mask.unsqueeze(1).unsqueeze(2)
+        extended_attention_mask: Float[torch.Tensor, "batch 1 1 seq"] = attention_mask.unsqueeze(1).unsqueeze(2)
 
         # Since attention_mask is 1.0 for positions we want to attend and 0.0 for
         # masked positions, this operation will create a tensor which is 0.0 for
@@ -909,11 +993,13 @@ class BertModel(BertPreTrainedModel):
         extended_attention_mask = extended_attention_mask.to(dtype=next(self.parameters()).dtype)  # fp16 compatibility
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
 
-        # embedding_output: [Batch, Length, EmbDim]
-        embedding_output: Tensor = self.embeddings(input_ids, token_type_ids)  # inputs [Batch, Length]
+        embedding_output: Float[torch.Tensor, "batch seq model_dim"] = self.embeddings(input_ids, token_type_ids)
+
+        encoded_layers: list[Float[torch.Tensor, "batch seq model_dim"]]  # hidden states
+        layer_atts: list[Float[torch.Tensor, "batch head seq seq"]]  # attention outputs
         encoded_layers, layer_atts = self.encoder(embedding_output, extended_attention_mask)
 
-        pooled_output = self.pooler(encoded_layers)
+        pooled_output: Float[torch.Tensor, "batch model_dim"] = self.pooler(encoded_layers)
         if not output_all_encoded_layers:
             encoded_layers = encoded_layers[-1]
 
@@ -943,9 +1029,9 @@ class BertForPreTraining(BertPreTrainedModel):
             selected in [0, 1]. It's a mask to be used if the input sequence length is smaller than the max
             input sequence length in the current batch. It's the mask that we typically use for attention when
             a batch has varying length sentences.
-        `masked_lm_labels`: optional masked language modeling labels: torch.LongTensor of shape [batch_size, sequence_length]
-            with indices selected in [-1, 0, ..., vocab_size]. All labels set to -1 are ignored (masked), the loss
-            is only computed for the labels set in [0, ..., vocab_size]
+        `masked_lm_labels`: optional masked language modeling labels: torch.LongTensor of shape 
+            [batch_size, sequence_length] with indices selected in [-1, 0, ..., vocab_size]. All labels set to -1 are 
+            ignored (masked), the loss is only computed for the labels set in [0, ..., vocab_size]
         `next_sentence_label`: optional next sentence classification loss: torch.LongTensor of shape [batch_size]
             with indices selected in [0, 1].
             0 => next sentence is the continuation, 1 => next sentence is a random sentence.
@@ -1022,7 +1108,7 @@ class TinyBertForPreTraining(BertPreTrainedModel):
     ) -> Tuple[List[Tensor], List[Tensor]]:
         # input_ids, token_type_ids, attention_mask: [Batch, Length]
         sequence_output: List[Tensor]  # embeddings + encoder layers?
-        att_output: List[Tensor]  # num ecoder layers
+        att_output: List[Tensor]  # num encoder layers
         pooled_output: Tensor  # [Batch, EmbDim]
         sequence_output, att_output, pooled_output = self.bert(input_ids, token_type_ids, attention_mask)
         tmp = []
@@ -1216,16 +1302,31 @@ class TinyBertForSequenceClassification(BertPreTrainedModel):
         self.fit_dense = nn.Linear(config.hidden_size, fit_size)
         self.apply(self.init_bert_weights)
 
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, labels=None, is_student=False):
+    def forward(
+            self,
+            input_ids: Int[torch.Tensor, "batch seq"],
+            token_type_ids: Optional[Int[torch.Tensor, "batch seq"]] = None,
+            attention_mask: Optional[Int[torch.Tensor, "batch seq"]] = None,
+            labels = None,
+            is_student: bool = False
+    ) -> tuple[
+            Float[torch.Tensor, "batch class"],
+            list[Float[torch.Tensor, "batch head_size seq seq"]],
+            list[Float[torch.Tensor, "batch seq model_dim"]]
+    ]:
+        sequence_output: list[Float[torch.Tensor, "batch seq model_dim"]]
+        att_output: list[Float[torch.Tensor, "batch head_size seq seq"]]
+        pooled_output: Float[torch.Tensor, "batch model_dim"]
+
         sequence_output, att_output, pooled_output = self.bert(
             input_ids, token_type_ids, attention_mask, output_all_encoded_layers=True, output_att=True
         )
 
-        logits = self.classifier(torch.relu(pooled_output))
+        logits: Float[torch.Tensor, "batch class"] = self.classifier(torch.relu(pooled_output))
 
-        tmp = []
         if is_student:
-            for s_id, sequence_layer in enumerate(sequence_output):
+            tmp = []
+            for sequence_layer in sequence_output:
                 tmp.append(self.fit_dense(sequence_layer))
             sequence_output = tmp
         return logits, att_output, sequence_output
