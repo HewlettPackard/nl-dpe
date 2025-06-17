@@ -153,5 +153,18 @@ have the following properties:
   must keep these names as is.
 - There must be 6 entries in this dictionary - weights and biases for K, Q and V matrices. Biases are 1D numpy arrays,
   while wights are 2D numpy arrays.
-- Given models this repository provides, the weights arrays have `(26, 26)` shape, while biases arrays have `(26,)` 
+- Given models this repository provides, the weights arrays have `(26, 26)` shape, while biases arrays have `(26,)`
   shape.
+
+## Hybrid inference: weights of self-attention head
+
+The inference code in this project supports hybrid inference when different layers of the model run on different compute devices.
+Concretely, the inference code supports computing `K`, `Q` and `V` weights of one self-attention head on an external device, while
+majority of the model runs on a CPU in a host system. It can be achieved following these steps:
+
+- Extract self-attention weights (`W_k`, `W_q` and `W_v`) using procedures outlined above.
+- Program or transfer these self-attention weights to an external compute devices.
+- Change the [dpe.py](./nl_dpe/dpe.py) implementation. Concretely:
+  - Update `_BERT_LAYER_INDEX` and `_ATTENTION_HEAD_INDEX` variables to match the self-attention weights that have been exported. These variables provide brief doc strings.
+  - Implement the `call` method in that file. We provide a placeholder implementation that demonstrates one possible implementation.
+  - Run model inference using CLI described above. The inference code will detect if this functionality is enabled and for what self-attention head. The inference code then will call the `dpe.py::call` function and will use its returned three matrices instead of those computed by the model itself. For implementation details on how the `call` method is called during the inference, see the `BertSelfAttention::forward` method in the  [modelling.py](./transformer/modeling.py) file. The relevant code segment starts with `if dpe.enabled(self.bert_layer_index)` line.
