@@ -1,3 +1,19 @@
+###
+# Copyright (2026) Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+###
+
 import os
 os.environ['CURL_CA_BUNDLE'] = ''
 os.environ['REQUESTS_CA_BUNDLE'] = ''
@@ -19,7 +35,6 @@ from models.cnn.imagenet import get_imagenet_model, prepare_imagenet_data
 
 from models.llm.utils import train_glue, evaluate_glue, train_squad, evaluate_squad, train_ptb, evaluate_ptb
 from models.llm.bert import get_bert_model_for_squad, get_bert_model_for_glue
-from models.llm.llama import get_llama_model, split_llama
 
 from models.utils.fuse import convert_model, print_params
 from models.utils.quant import quantizer_switcher
@@ -86,9 +101,6 @@ def parse_args():
     parser.add_argument('--encode', action='store_true', help='Use gray encoding for output.',)
     parser.add_argument('--acam_finetuned', action='store_true', help='Use finetuned trees.',)
 
-    # Partition Llama model
-    parser.add_argument("--parts", type=str, default=None, help="e.g. head, 0-5, tail.",)
-
     # Digital slicing for DPE
     parser.add_argument('--digital_slicing', action='store_true', help='Use digital slicing for weights.',)
     parser.add_argument("--bits_per_cell", type=int, default=2, help="How many digital bits can a ReRAM cell store.",)
@@ -143,8 +155,6 @@ def run(args, device):
         args.data_collator = data_collator
         args.metric = metric
         args.is_regression = is_regression
-    elif args.model_type in ["llama3.2_1B", "llama3.2_3B"]:
-        pretrained_model, train_list, test_list, tokenizer = get_llama_model(args.model_type)
     else:
         print("unrecognized dataset")
         exit(0)
@@ -188,9 +198,6 @@ def run(args, device):
             val_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True, collate_fn=data_collator)
             quantizer_switcher(model, True, args.moving_min_max)
             evaluate_glue(val_loader, model, device, is_regression, metric, args.print_freq)
-        elif args.model_type in ["llama3.2_1B", "llama3.2_3B"]:
-            quantizer_switcher(model, True, args.moving_min_max)
-            evaluate_ptb(train_list, model, device, args.batch_size)
         else:
             val_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
             quantizer_switcher(model, True, args.moving_min_max)
@@ -204,8 +211,6 @@ def run(args, device):
     # Evaluate
 
     if args.evaluate:
-        if (args.model_type in ["llama3.2_1B", "llama3.2_3B"]) and (args.parts is not None):
-            model = split_llama(model, args.parts)
         model.to(device)
         if args.task_name == "squad":
             val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True, collate_fn=data_collator)
@@ -213,8 +218,6 @@ def run(args, device):
         elif args.model_type in ["bert_base", "bert_tiny"]:
             val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True, collate_fn=data_collator)
             evaluate_glue(val_loader, model, device, is_regression, metric, args.print_freq)
-        elif args.model_type in ["llama3.2_1B", "llama3.2_3B"]:
-            evaluate_ptb(test_list, model, device, args.batch_size, args.parts)
         else:
             val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
             validate_cnn(val_loader, model, criterion, device, args.print_freq)
