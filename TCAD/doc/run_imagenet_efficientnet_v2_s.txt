@@ -1,0 +1,206 @@
+==============================================================================================
+||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+NL-DPE
+||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+==============================================================================================
+
+Step 1. Test the pretrained model
+
+python main.py \
+--seed=1234 \
+--model_type=efficientnet_v2_s \
+--task_name=imagenet \
+--load_pretrained \
+--evaluate --gpu 5
+
+-------------------------------------------------------------
+DPE Noise
+
+Step 2. Test DPE noise without finetuning
+
+python main.py \
+--seed=1234 \
+--model_type=efficientnet_v2_s \
+--task_name=imagenet \
+--load_pretrained \
+--noise \
+--g_min=0 \
+--g_max=150 \
+--evaluate --gpu 5
+
+Step 3. Finetune DPE noise
+
+python main.py \
+--seed=1234 \
+--model_type=efficientnet_v2_s \
+--task_name=imagenet \
+--load_pretrained \
+--noise \
+--g_min=0 \
+--g_max=150 \
+--learning_rate=0.001 \
+--weight_norm=1e-2 \
+--num_train_epochs=1 \
+--save_dir=dpe --gpu 5
+
+Step 4. Test DPE noise after finetuning
+
+python main.py \
+--seed=1234 \
+--model_type=efficientnet_v2_s \
+--task_name=imagenet \
+--load \
+--load_dir=dpe \
+--noise \
+--g_min=0 \
+--g_max=150 \
+--evaluate --gpu 5
+
+-------------------------------------------------------------
+Quantization
+
+Step 5. perform PTQ
+
+python main.py \
+--seed=1234 \
+--model_type=efficientnet_v2_s \
+--task_name=imagenet \
+--load_pretrained \
+--save_dir=quant \
+--noise \
+--g_min=0 \
+--g_max=150 \
+--quant \
+--calibrate --gpu 5
+
+Step 6. Test PTQ
+
+python main.py \
+--seed=1234 \
+--model_type=efficientnet_v2_s \
+--task_name=imagenet \
+--load \
+--load_dir=quant \
+--noise \
+--g_min=0 \
+--g_max=150 \
+--quant \
+--evaluate \
+--print_params --gpu 5
+
+-------------------------------------------------------------
+Train trees
+
+Step 7. Get lookup table for ACAM implementation
+
+python main.py \
+--seed=1234 \
+--model_type=efficientnet_v2_s \
+--task_name=imagenet \
+--train_trees \
+--encode
+
+Step 8. Finetune ACAM noise
+
+python main.py \
+--finetune \
+--model_type=efficientnet_v2_s \
+--task_name=imagenet \
+--acam_g_min=0 \
+--acam_g_max=150 \
+--encode
+
+-------------------------------------------------------------
+ACAM noise
+
+Step 9. Test ACAM without noise
+
+python main.py \
+--seed=1234 \
+--model_type=efficientnet_v2_s \
+--task_name=imagenet \
+--load \
+--load_dir=quant \
+--noise \
+--g_min=0 \
+--g_max=150 \
+--quant \
+--lut \
+--encode \
+--evaluate --gpu 5
+
+Step 10. Test ACAM noise without finetuning
+
+python main.py \
+--seed=1234 \
+--model_type=efficientnet_v2_s \
+--task_name=imagenet \
+--load \
+--load_dir=quant \
+--noise \
+--g_min=0 \
+--g_max=150 \
+--quant \
+--lut \
+--acam_noise \
+--acam_g_min=0 \
+--acam_g_max=150 \
+--encode \
+--evaluate --gpu 5
+
+Step 11. Test ACAM noise after finetuning
+
+python main.py \
+--seed=1234 \
+--model_type=efficientnet_v2_s \
+--task_name=imagenet \
+--load \
+--load_dir=quant \
+--noise \
+--g_min=0 \
+--g_max=150 \
+--quant \
+--lut \
+--acam_noise \
+--acam_g_min=0 \
+--acam_g_max=150 \
+--acam_finetuned \
+--encode \
+--evaluate --gpu 5
+
+==============================================================================================
+||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+Digital Slicing
+||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+==============================================================================================
+
+python main.py \
+--seed=1234 \
+--model_type=efficientnet_v2_s \
+--task_name=imagenet \
+--load_pretrained \
+--save_dir=digital_slicing \
+--digital_slicing \
+--bits_per_cell=2 \
+--calibrate --gpu 5
+
+python main.py \
+--seed=1234 \
+--model_type=efficientnet_v2_s \
+--task_name=imagenet \
+--load \
+--load_dir=digital_slicing \
+--digital_slicing \
+--bits_per_cell=2 \
+--evaluate --gpu 5
+
+python main.py \
+--seed=1234 \
+--model_type=efficientnet_v2_s \
+--task_name=imagenet \
+--load \
+--load_dir=digital_slicing \
+--digital_slicing \
+--bits_per_cell=2 \
+--noise \
+--evaluate --gpu 5
