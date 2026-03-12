@@ -1,0 +1,269 @@
+==============================================================================================
+||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+NL-DPE
+||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+==============================================================================================
+
+Step 1. Test the pretrained model
+
+python main.py \
+--seed=1234 \
+--model_type=resnet18 \
+--task_name=cifar10 \
+--load_pretrained \
+--evaluate --gpu 1
+
+-------------------------------------------------------------
+DPE Noise
+
+Step 2. Test DPE noise without finetuning
+
+python main.py \
+--seed=1234 \
+--model_type=resnet18 \
+--task_name=cifar10 \
+--load_pretrained \
+--noise \
+--g_min=0 \
+--g_max=150 \
+--evaluate --gpu 1
+
+Step 3. Finetune DPE noise
+
+python main.py \
+--seed=1234 \
+--model_type=resnet18 \
+--task_name=cifar10 \
+--load_pretrained \
+--noise \
+--g_min=0 \
+--g_max=150 \
+--learning_rate=0.00001 \
+--weight_norm=1e-2 \
+--num_train_epochs=1 \
+--save_dir=dpe --gpu 1
+
+Step 4. Test DPE noise after finetuning
+
+python main.py \
+--seed=1234 \
+--model_type=resnet18 \
+--task_name=cifar10 \
+--load \
+--load_dir=dpe \
+--noise \
+--g_min=0 \
+--g_max=150 \
+--evaluate --gpu 1
+
+-------------------------------------------------------------
+Quantization
+
+Step 5. perform PTQ
+
+python main.py \
+--seed=1234 \
+--model_type=resnet18 \
+--task_name=cifar10 \
+--load_pretrained \
+--save_dir=quant \
+--noise \
+--g_min=0 \
+--g_max=150 \
+--quant \
+--calibrate --gpu 1
+
+Step 6. Test PTQ
+
+python main.py \
+--seed=1234 \
+--model_type=resnet18 \
+--task_name=cifar10 \
+--load \
+--load_dir=quant \
+--noise \
+--g_min=0 \
+--g_max=150 \
+--quant \
+--evaluate \
+--print_params --gpu 1
+
+-------------------------------------------------------------
+Train trees
+
+Step 7. Get lookup table for ACAM implementation
+
+python main.py \
+--seed=1234 \
+--model_type=resnet18 \
+--task_name=cifar10 \
+--train_trees \
+--encode
+
+Step 8. Finetune ACAM noise
+
+python main.py \
+--finetune \
+--model_type=resnet18 \
+--task_name=cifar10 \
+--acam_g_min=0 \
+--acam_g_max=150 \
+--encode
+
+-------------------------------------------------------------
+ACAM noise
+
+Step 9. Test ACAM without noise
+
+python main.py \
+--seed=1234 \
+--model_type=resnet18 \
+--task_name=cifar10 \
+--load \
+--load_dir=quant \
+--noise \
+--g_min=0 \
+--g_max=150 \
+--quant \
+--lut \
+--encode \
+--evaluate --gpu 1
+
+Step 10. Test ACAM noise without finetuning
+
+python main.py \
+--seed=1234 \
+--model_type=resnet18 \
+--task_name=cifar10 \
+--load \
+--load_dir=quant \
+--noise \
+--g_min=0 \
+--g_max=150 \
+--quant \
+--lut \
+--acam_noise \
+--acam_g_min=0 \
+--acam_g_max=150 \
+--encode \
+--evaluate --gpu 1
+
+Step 11. Test ACAM noise after finetuning
+
+python main.py \
+--seed=1234 \
+--model_type=resnet18 \
+--task_name=cifar10 \
+--load \
+--load_dir=quant \
+--noise \
+--g_min=0 \
+--g_max=150 \
+--quant \
+--lut \
+--acam_noise \
+--acam_g_min=0 \
+--acam_g_max=150 \
+--acam_finetuned \
+--evaluate --gpu 1
+
+==============================================================================================
+||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+Digital Slicing
+||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+==============================================================================================
+
+python main.py \
+--seed=1234 \
+--model_type=resnet18 \
+--task_name=cifar10 \
+--load_pretrained \
+--save_dir=digital_slicing \
+--digital_slicing \
+--bits_per_cell=2 \
+--calibrate --gpu 1
+
+python main.py \
+--seed=1234 \
+--model_type=resnet18 \
+--task_name=cifar10 \
+--load \
+--load_dir=digital_slicing \
+--digital_slicing \
+--bits_per_cell=2 \
+--evaluate --gpu 1
+
+python main.py \
+--seed=1234 \
+--model_type=resnet18 \
+--task_name=cifar10 \
+--load \
+--load_dir=digital_slicing \
+--digital_slicing \
+--bits_per_cell=2 \
+--noise \
+--evaluate --gpu 1
+
+==============================================================================================
+||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+GCE
+||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+==============================================================================================
+
+Step 1. Test the pretrained model
+
+python main.py \
+--seed=1234 \
+--model_type=resnet18 \
+--task_name=cifar10 \
+--use_gce \
+--load_pretrained \
+--evaluate --gpu 0
+
+Step 2. perform PTQ
+
+python main.py \
+--seed=1234 \
+--model_type=resnet18 \
+--task_name=cifar10 \
+--use_gce \
+--load_pretrained \
+--save_dir=quant_gce \
+--quant \
+--calibrate --gpu 0
+
+Step 3. Test PTQ
+
+python main.py \
+--seed=1234 \
+--model_type=resnet18 \
+--task_name=cifar10 \
+--use_gce \
+--load \
+--load_dir=quant_gce \
+--quant \
+--evaluate \
+--print_params --gpu 0
+
+Step 4. Get lookup table for ACAM implementation
+
+python main.py \
+--seed=1234 \
+--model_type=resnet18 \
+--task_name=cifar10 \
+--mapping \
+--encode
+
+Step 5. Test ACAM
+
+python main.py \
+--seed=1234 \
+--model_type=resnet18 \
+--task_name=cifar10 \
+--use_gce \
+--load \
+--load_dir=quant_gce \
+--quant \
+--lut \
+--encode \
+--evaluate --gpu 0
