@@ -9,6 +9,24 @@ Some of the changes we introduced:
 
 This repository does not include the training code - only code to run inference.
 
+## Pre-requisites
+
+This project uses [uv](https://docs.astral.sh/uv/). Install it (Linux or MacOS):
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# installing to $HOME/.local/bin
+# To add $HOME/.local/bin to your PATH, either restart your shell or run `source $HOME/.local/bin/env`
+
+uv --version
+```
+In addition, some of the commands described here (like downloading datasets) are implemented as taskipy tasks. To run
+them, install taskipy as a standalone tool:
+```bash
+uv tool install taskipy   # Install standalone taskipy.
+task --list               # List available tasks (they are described in this document).
+```
+
 ## Install
 
 ```shell
@@ -17,12 +35,8 @@ git clone https://github.com/HewlettPackard/nl-dpe
 cd ./nl-dpe
 
 # Create Python virtual environment.
-virtualenv ./.env --python=3
-source ./.env/bin/activate
-pip install poetry==2.1.2
-
-# Install project and its dependencies.
-poetry install --without=dev
+uv venv --python 3.12     # This creates virtual environment in `./.venv`.
+uv sync --no-group dev    # Install project dependencies (without development dependencies).
 
 # Make sure project modules are importable.
 export PYTHONPATH=$(pwd)
@@ -42,7 +56,7 @@ Evaluation script uses the GLUE dataset. See the README file from the TinyBERT r
 We provide the [download_glue_data.py](./nl_dpe/download_glue_data.py) script which is an updated version of the
 GitHub gist mentioned above.
 
-- Download MRPC dataset:
+- Download MRPC dataset by running `task download-mrpc` or running the following commands:
 
   ```shell
   mkdir -p ./datasets/mrpc && cd ./datasets/mrpc
@@ -55,10 +69,10 @@ GitHub gist mentioned above.
   # 1023K   716e0f67af962f08220b7e97d229b293077ef41f   msr_paraphrase_train.txt
   ```
 
-- Download GLUE dataset (after downloading the MRPC data).
+- Download GLUE dataset (after downloading the MRPC data) by running `task download-glue` or running the following commands:
 
   ```shell
-  python ./nl_dpe/download_glue_data.py --data_dir=./datasets/glue --tasks=all --path_to_mrpc ./datasets/mrpc
+  uv run --no-sync python ./nl_dpe/download_glue_data.py --data_dir=./datasets/glue --tasks=all --path_to_mrpc ./datasets/mrpc
   ```
 
 ## Models
@@ -89,21 +103,22 @@ Three models are located in the [models](./models/) directory.
 Look at [nl_dpe/evaluate.py](./nl_dpe/evaluate.py) file:
 
 ```shell
-python ./nl_dpe/evaluate.py <task_name> <model_uri> <data_dir>
+uv run python ./nl_dpe/evaluate.py <task_name> <model_uri> <data_dir>
 #      <task_name>: One of 'cola', 'sst-2', 'mrpc', 'sts-b', 'qqp', 'mnli', 'mnli-mm', 'qnli', 'rte', 'wnli'
 #                   Task name must be consistent with the model being evaluated.
 #      <model_uri>: Path to a model directory
 #      <data_dir>:  Path to the data directory (e.g., ${GLUE_DIR}\\SST-2).
 ```
 
+For these evaluation runs we also provide taskipy tasks (`eval-sst2`, `eval-cola` and `eval-mrpc`):
 ```shell
-python ./nl_dpe/evaluate.py sst-2 ./models/wise-tern-584/ ./datasets/glue/SST-2
+uv run python ./nl_dpe/evaluate.py sst-2 ./models/wise-tern-584/ ./datasets/glue/SST-2
 # acc = 0.9174311926605505, eval_loss = 0.2411253090415682
 
-python ./nl_dpe/evaluate.py cola ./models/blushing-dove-984/ ./datasets/glue/CoLA
+uv run python ./nl_dpe/evaluate.py cola ./models/blushing-dove-984/ ./datasets/glue/CoLA
 # mcc = 0.3118300074953714, eval_loss = 0.5854980647563934
 
-python ./nl_dpe/evaluate.py mrpc ./models/spiffy-snake-501/ ./datasets/glue/MRPC
+uv run python ./nl_dpe/evaluate.py mrpc ./models/spiffy-snake-501/ ./datasets/glue/MRPC
 # acc_and_f1 = 0.787219887955182, eval_loss = 0.583455924804394
 ```
 
@@ -119,29 +134,29 @@ attention head (1, ..., 12 inclusive).
 
 ```shell
 # Evaluate this model to get the expected performance.
-python ./nl_dpe/evaluate.py cola ./models/blushing-dove-984/ ./datasets/glue/CoLA
+uv run python ./nl_dpe/evaluate.py cola ./models/blushing-dove-984/ ./datasets/glue/CoLA
 # eval_loss = 0.5854980764967023 mcc = 0.3118300074953714
 
 # Save attention weights for 1st layer and last attention head
-python ./nl_dpe/model.py extract-attention-weights --model-path=./models/blushing-dove-984/ --output-file=att-matrices.pkl --layer=1 --head=12
+uv run python ./nl_dpe/model.py extract-attention-weights --model-path=./models/blushing-dove-984/ --output-file=att-matrices.pkl --layer=1 --head=12
 
 # Update model with the unmodified weights. The model will be saved in a different directory.
-python ./nl_dpe/model.py update-attention-weights --model-path=./models/blushing-dove-984/ --weights-file=att-matrices.pkl --head=12 --output-dir=./models/blushing-dove-984-updated
+uv run python ./nl_dpe/model.py update-attention-weights --model-path=./models/blushing-dove-984/ --weights-file=att-matrices.pkl --head=12 --output-dir=./models/blushing-dove-984-updated
 
 # Evaluate this model to confirm the original performance
-python ./nl_dpe/evaluate.py cola ./models/blushing-dove-984-updated ./datasets/glue/CoLA
+uv run python ./nl_dpe/evaluate.py cola ./models/blushing-dove-984-updated ./datasets/glue/CoLA
 #   eval_loss = 0.5854980764967023, mcc = 0.3118300074953714
 
 
 # Now, remove the saved model and add Gaussian noise to the serialized attention weights.
 rm -r ./models/blushing-dove-984-updated
-python ./nl_dpe/model.py add-noise-to-attention-weights --weights-file=att-matrices.pkl --mean=0.0 --std=0.1
+uv run python ./nl_dpe/model.py add-noise-to-attention-weights --weights-file=att-matrices.pkl --mean=0.0 --std=0.1
 
 # Update the model again with slightly different attention weights
-python ./nl_dpe/model.py update-attention-weights --model-path=./models/blushing-dove-984/ --weights-file=att-matrices.pkl --head=12 --output-dir=./models/blushing-dove-984-updated
+uv run python ./nl_dpe/model.py update-attention-weights --model-path=./models/blushing-dove-984/ --weights-file=att-matrices.pkl --head=12 --output-dir=./models/blushing-dove-984-updated
 
 # Confirm that evaluation metics are different
-python ./nl_dpe/evaluate.py cola ./models/blushing-dove-984-updated ./datasets/glue/CoLA
+uv run python ./nl_dpe/evaluate.py cola ./models/blushing-dove-984-updated ./datasets/glue/CoLA
 #   eval_loss = 0.59219029545784, mcc = 0.29623405262647357
 ```
 
